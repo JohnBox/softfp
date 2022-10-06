@@ -3,6 +3,9 @@ use core::cmp::Ordering;
 use core::convert::{TryFrom, TryInto};
 use core::ops;
 
+#[cfg(feature = "serde")]
+use borsh::{BorshDeserialize, BorshSerialize};
+
 use super::int::{CastFrom, CastTo, Int, UInt};
 
 // #region Rounding mode constant
@@ -23,7 +26,11 @@ impl TryFrom<u32> for RoundingMode {
     type Error = ();
     #[inline]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value >= 5 { Err(()) } else { Ok(unsafe { core::mem::transmute(value) }) }
+        if value >= 5 {
+            Err(())
+        } else {
+            Ok(unsafe { core::mem::transmute(value) })
+        }
     }
 }
 
@@ -129,7 +136,11 @@ impl TryFrom<u32> for Class {
     type Error = ();
     #[inline]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value >= 10 { Err(()) } else { Ok(unsafe { core::mem::transmute(value) }) }
+        if value >= 10 {
+            Err(())
+        } else {
+            Ok(unsafe { core::mem::transmute(value) })
+        }
     }
 }
 
@@ -156,10 +167,25 @@ pub trait FpDesc {
     //
     // We observe that `SIGNIFICAND_WIDTH + 4` is smaller than the width of the entire float, so we
     // use the same integer type to represent both.
+
+    #[cfg(not(feature = "serde"))]
     type Holder: UInt + CastFrom<u32> + CastTo<u32> + CastTo<Self::DoubleHolder>;
 
+    #[cfg(feature = "serde")]
+    type Holder: UInt
+        + CastFrom<u32>
+        + CastTo<u32>
+        + CastTo<Self::DoubleHolder>
+        + BorshSerialize
+        + BorshDeserialize;
+
     // Need to contain the product of significand with hidden bits, plus two rounding bits.
+
+    #[cfg(not(feature = "serde"))]
     type DoubleHolder: UInt + CastTo<Self::Holder>;
+
+    #[cfg(feature = "serde")]
+    type DoubleHolder: UInt + CastTo<Self::Holder> + BorshSerialize + BorshDeserialize;
 }
 
 /// Generic type for software floating point operations.
@@ -170,6 +196,20 @@ pub trait FpDesc {
 /// assert_eq!(F32::zero(false).0, 0);
 /// assert_eq!(F64::zero(false).0, 0);
 /// ```
+#[cfg_attr(not(feature = "serde"), doc = "```ignore")]
+#[cfg_attr(feature = "serde", doc = "```")]
+/// ```
+/// # use std::cmp::Ordering;
+/// # use softfp::F64;
+/// # use borsh::{BorshDeserialize, BorshSerialize};
+///
+/// let value = F64::zero(false);
+/// let serialized_value = value.try_to_vec().unwrap();
+/// let deserialized_value = F64::try_from_slice(&serialized_value).unwrap();
+///
+/// assert!(value.partial_cmp(&deserialized_value) == Some(Ordering::Equal));
+/// ```
+#[cfg_attr(feature = "serde", derive(BorshSerialize, BorshDeserialize))]
 pub struct Fp<Desc: FpDesc>(pub Desc::Holder);
 
 impl<Desc: FpDesc> Fp<Desc> {
@@ -609,8 +649,11 @@ impl<Desc: FpDesc> Fp<Desc> {
 
     fn multiply(a: Self, b: Self) -> Self {
         // Enforce |a| > |b| for easier handling.
-        let (mut a, mut b) =
-            if Self::total_order_magnitude(a, b) == Ordering::Less { (b, a) } else { (a, b) };
+        let (mut a, mut b) = if Self::total_order_magnitude(a, b) == Ordering::Less {
+            (b, a)
+        } else {
+            (a, b)
+        };
 
         if a.is_nan() {
             return Self::propagate_nan(a, b);
@@ -834,8 +877,11 @@ impl<Desc: FpDesc> Fp<Desc> {
     /// Calculate `a * b + c` without rounding intermediate results.
     pub fn fused_multiply_add(a: Self, b: Self, c: Self) -> Self {
         // Enforce |a| > |b| for easier handling.
-        let (a, b) =
-            if Self::total_order_magnitude(a, b) == Ordering::Less { (b, a) } else { (a, b) };
+        let (a, b) = if Self::total_order_magnitude(a, b) == Ordering::Less {
+            (b, a)
+        } else {
+            (a, b)
+        };
 
         // Handle NaNs.
         if a.is_nan() {
@@ -906,12 +952,16 @@ impl<Desc: FpDesc> Fp<Desc> {
         significand_c <<= Desc::SIGNIFICAND_WIDTH;
 
         // Align product and c.
-        if exponent_c < product_exponent {
-            significand_c =
-                Self::right_shift(significand_c, (product_exponent - exponent_c) as u32);
-        } else if exponent_c > product_exponent {
-            product = Self::right_shift(product, (exponent_c - product_exponent) as u32);
-            product_exponent = exponent_c;
+        match exponent_c.cmp(&product_exponent) {
+            Ordering::Less => {
+                significand_c =
+                    Self::right_shift(significand_c, (product_exponent - exponent_c) as u32);
+            }
+            Ordering::Equal => {}
+            Ordering::Greater => {
+                product = Self::right_shift(product, (exponent_c - product_exponent) as u32);
+                product_exponent = exponent_c;
+            }
         }
 
         // a * b + c
@@ -1077,7 +1127,11 @@ impl<Desc: FpDesc> Fp<Desc> {
         let max = T::max_value() >> 1;
         let min = !max;
         let (sign, value) = self.convert_to_int(max, min);
-        if sign { !value + T::one() } else { value }
+        if sign {
+            !value + T::one()
+        } else {
+            value
+        }
     }
 
     // IEEE 754-2008 5.4.2 formatOf general-computational operations > Conversion operations
@@ -1244,7 +1298,13 @@ impl<Desc: FpDesc> Fp<Desc> {
             Class::PositiveNormal as u32
         };
         // We use the property that negative and positive classes add up to 7.
-        (if sign { 7 - positive_class } else { positive_class }).try_into().unwrap()
+        (if sign {
+            7 - positive_class
+        } else {
+            positive_class
+        })
+        .try_into()
+        .unwrap()
     }
 
     //
@@ -1272,7 +1332,11 @@ impl<Desc: FpDesc> Fp<Desc> {
             return (a, a);
         }
 
-        if Self::total_order(a, b) == Ordering::Less { (a, b) } else { (b, a) }
+        if Self::total_order(a, b) == Ordering::Less {
+            (a, b)
+        } else {
+            (b, a)
+        }
     }
 
     /// Compare two numbers and return the smaller one.
@@ -1313,7 +1377,11 @@ impl<Desc: FpDesc> Fp<Desc> {
     pub fn total_order(a: Self, b: Self) -> Ordering {
         if a.sign() == b.sign() {
             let ret = Self::total_order_magnitude(a, b);
-            if a.sign() { ret.reverse() } else { ret }
+            if a.sign() {
+                ret.reverse()
+            } else {
+                ret
+            }
         } else if a.sign() {
             Ordering::Less
         } else {

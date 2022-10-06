@@ -11,7 +11,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 bitflags = "1.1"
+borsh = { version = "0.9.3", optional = true }
 
 [features]
 register = []
-default = ["register"]
+serde = ["dep:borsh"]
+default = ["register", "serde"]
