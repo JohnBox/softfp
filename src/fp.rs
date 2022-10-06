@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 use core::convert::{TryFrom, TryInto};
 use core::ops;
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use super::int::{CastFrom, CastTo, Int, UInt};
@@ -168,10 +168,10 @@ pub trait FpDesc {
     // We observe that `SIGNIFICAND_WIDTH + 4` is smaller than the width of the entire float, so we
     // use the same integer type to represent both.
 
-    #[cfg(not(feature = "serde"))]
+    #[cfg(not(feature = "borsh"))]
     type Holder: UInt + CastFrom<u32> + CastTo<u32> + CastTo<Self::DoubleHolder>;
 
-    #[cfg(feature = "serde")]
+    #[cfg(feature = "borsh")]
     type Holder: UInt
         + CastFrom<u32>
         + CastTo<u32>
@@ -181,10 +181,10 @@ pub trait FpDesc {
 
     // Need to contain the product of significand with hidden bits, plus two rounding bits.
 
-    #[cfg(not(feature = "serde"))]
+    #[cfg(not(feature = "borsh"))]
     type DoubleHolder: UInt + CastTo<Self::Holder>;
 
-    #[cfg(feature = "serde")]
+    #[cfg(feature = "borsh")]
     type DoubleHolder: UInt + CastTo<Self::Holder> + BorshSerialize + BorshDeserialize;
 }
 
@@ -196,8 +196,9 @@ pub trait FpDesc {
 /// assert_eq!(F32::zero(false).0, 0);
 /// assert_eq!(F64::zero(false).0, 0);
 /// ```
-#[cfg_attr(not(feature = "serde"), doc = "```ignore")]
-#[cfg_attr(feature = "serde", doc = "```")]
+
+#[cfg_attr(not(feature = "borsh"), doc = "```ignore")]
+#[cfg_attr(feature = "borsh", doc = "```")]
 /// ```
 /// # use std::cmp::Ordering;
 /// # use softfp::F64;
@@ -207,9 +208,10 @@ pub trait FpDesc {
 /// let serialized_value = value.try_to_vec().unwrap();
 /// let deserialized_value = F64::try_from_slice(&serialized_value).unwrap();
 ///
-/// assert!(value.partial_cmp(&deserialized_value) == Some(Ordering::Equal));
+/// assert_eq!(value.partial_cmp(&deserialized_value), Some(Ordering::Equal));
 /// ```
-#[cfg_attr(feature = "serde", derive(BorshSerialize, BorshDeserialize))]
+
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[derive(Debug)]
 pub struct Fp<Desc: FpDesc>(pub Desc::Holder);
 

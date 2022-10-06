@@ -15,5 +15,4 @@ borsh = { version = "0.9.3", optional = true }
 
 [features]
 register = []
-serde = ["dep:borsh"]
-default = ["register", "serde"]
+default = ["register", "borsh"]
