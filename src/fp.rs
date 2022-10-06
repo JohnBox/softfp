@@ -210,6 +210,7 @@ pub trait FpDesc {
 /// assert!(value.partial_cmp(&deserialized_value) == Some(Ordering::Equal));
 /// ```
 #[cfg_attr(feature = "serde", derive(BorshSerialize, BorshDeserialize))]
+#[derive(Debug)]
 pub struct Fp<Desc: FpDesc>(pub Desc::Holder);
 
 impl<Desc: FpDesc> Fp<Desc> {
@@ -1473,7 +1474,7 @@ impl<Desc: FpDesc> ops::Neg for Fp<Desc> {
 }
 
 #[doc(hidden)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct F32Desc;
 
 impl FpDesc for F32Desc {
@@ -1484,7 +1485,7 @@ impl FpDesc for F32Desc {
 }
 
 #[doc(hidden)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct F64Desc;
 
 impl FpDesc for F64Desc {
